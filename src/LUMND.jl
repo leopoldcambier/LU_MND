@@ -2,7 +2,7 @@ module LUMND
     
     include("../Metis/src/Metis.jl")
 
-    export factorize
+    export factorize, solve
 
     using Printf
 
