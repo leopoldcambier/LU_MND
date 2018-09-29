@@ -10,7 +10,7 @@ mutable struct NDSep # A nested dissection separator
 
     ## Hierarchy & dofs data
 	ptr::Array{Int64,1} 			# A pointer array to the end of each cluster within s at the current stage of the elimination
-    hrch                            # A hierarchy, i.e., a tree of integer, monotone left -> right
+    hrch::IT                        # A hierarchy, i.e., a tree of integer, monotone left -> right
     start::Int64                    # Where does the separator start
     depth::Int64                    # Where the clustering stand in terms of depth
 
@@ -140,12 +140,12 @@ function Base.iterate(iter::BinTreeIt, state=(0, 2^iter.maxLevel))
     return (next, next)
 end
 
-function factorize(A, maxLevel)
+function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::Bool=false)
    
     N = size(A, 1)
 
     # Partition
-    (seps, subseps, hrch, dofs) = ml_nd_hrch_fast(A, maxLevel, verbose=false);
+    (subseps, hrch, dofs) = mnd(A, maxLevel, verbose=verbose);
 
 	## Permute the matrix & initialize an empty tree
 	perm = Vector{Int64}(undef, N)
@@ -174,7 +174,8 @@ function factorize(A, maxLevel)
     end
     dofs2cl = dofs2cl[perm]
 
-    ## Compute sparsity pattern, allocate & assemble
+    ## Symbolic computation: Compute sparsity pattern, allocate & assemble
+	if(verbose) @printf("Assembling...\n") end
     for (lvl, sep) in BinTreeIt(maxLevel)
         h = Tree[lvl][sep].hrch
         s = length(dofs[lvl][sep])
@@ -229,12 +230,12 @@ function factorize(A, maxLevel)
         Tree[lvl][sep].ALow = ALow
     end
 
-    ## Factorize
+    ## Numerical factorization
     for lvl = 1:maxLevel
 
+		if(verbose) @printf("Lvl: %d, eliminating\n", lvl) end
         
         ## Eliminate
-
         for sep = 1:length(dofs[lvl])
             s = Tree[lvl][sep]
             # Check it's fully merged
@@ -266,8 +267,6 @@ function factorize(A, maxLevel)
         end
 
         ## Merge
-
-        # Change the data layout
         for lvl2 = lvl+1:maxLevel
             for sep2 = 1:length(dofs[lvl2])
                 # Take care of the columns
@@ -280,8 +279,7 @@ function factorize(A, maxLevel)
                     (l_, s_, p_) = s.Nbr[n_b1]
                     (n_siblg, parent) = siblings(Tree[l_][s_], p_)
                     # All the siblings should follow
-                    n_b2 = n_b1
-                    n_i2 = n_i1
+                    n_i2, n_b2 = n_i1, n_b1
                     for i = 1:length(n_siblg)
                         n_p_  = n_siblg[i]
                         @assert s.Nbr[n_b2] == (l_, s_, n_p_)
@@ -295,8 +293,7 @@ function factorize(A, maxLevel)
                     end
                     # Next
                     n_merged += 1
-                    n_i1 = n_i2
-                    n_b1 = n_b2
+                    n_i1, n_b1 = n_i2, n_b2
                 end
                 # Resize
                 s.ALow = s.ALow[1:n_merged-1, 1:length(ptr2)-1]

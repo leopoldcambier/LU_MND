@@ -104,6 +104,7 @@ function sorted_to_ptr(v::AbstractArray{V}) where {V}
     return r
 end
 
+# [1, 2, 1] -> [1, 2, 4, 5]
 function sizes_to_ptr(v::AbstractArray)
     if length(v) == 0
         return [1]
@@ -112,6 +113,7 @@ function sizes_to_ptr(v::AbstractArray)
     end
 end
 
+# Fill Adst with Asrc[n,s]
 function fill_dense_block!(Asrc::SparseMatrixCSC{Tv,Ti}, Adst::StridedMatrix{Tv}, n::UnitRange{Ti}, s::UnitRange{Ti},) where {Tv, Ti <: Integer}
     for j = 1:length(s)
         k = A.colptr[s[j]]:(A.colptr[s[j]+1]-1)
@@ -122,4 +124,29 @@ function fill_dense_block!(Asrc::SparseMatrixCSC{Tv,Ti}, Adst::StridedMatrix{Tv}
             Adst[I[i] - n[1] + 1, j] = V[i]
         end
     end
+end
+
+# In a binary tree, returns true if (l1, s1) and (l2, s2) are on same path to the root
+#			(3,1)
+#	      /       \
+#     (2,1)      (2,2)
+#     /  \       /   \
+# (1,1) (1,2) (1,3) (1,4)
+function are_connected(l1, s1, l2, s2, maxLevel)
+    @assert l1 > 0 && l1 <= maxLevel && s1 > 0 && s1 <= 2^(maxLevel-l1)
+    @assert l2 > 0 && l2 <= maxLevel && s2 > 0 && s2 <= 2^(maxLevel-l2)
+    if l1 == l2
+        return s1 == s2
+    end
+	L = [l1, l2]
+    S = [s1, s2]
+    (lmax, imax) = findmax(L)
+    (lmin, imin) = findmin(L)
+    smax = S[imax]
+    smin = S[imin]
+    while lmin < lmax
+        lmin += 1
+        smin = div(smin+1,2)
+    end
+    smin == smax
 end

@@ -2,11 +2,24 @@
 ## Data Structures
 ##
 
+# Each separator is associated with a tree like
+#
+#       1
+#       |
+#       1
+#     / | \
+#    1  2  3
+#   / \ |  |
+#   1 2 3  4
+#
+# The ids are increasing left-right
+
+# A node a the tree
 mutable struct NodeIT 
-    i::Int64                        # The partition id
+    i::Int64                        # Id
     anc::Bool                       # Wether the point is an anchor
-    c::Array{NodeIT,1}              # The childrens
-    p::Union{Nothing, NodeIT}       # May or may-not have a parent
+    c::Array{NodeIT,1}              # Childrens
+    p::Union{Nothing, NodeIT}       # Parent
     function NodeIT(i::Int64)
         this = new()
         this.i = i
@@ -16,12 +29,10 @@ mutable struct NodeIT
         this
     end
 end
-
 Base.show(io::IO, n::NodeIT) = print(io, n.anc ? @sprintf("%d*",n.i) : @sprintf("%d^",n.i))
 
-children(n::NodeIT) = n.c
-
-mutable struct IT # "Integer-Tree" : a tree of ints for a given separator hierarchy
+# The tree
+mutable struct IT 
     nit::Array{Array{NodeIT,1},1}       
     function IT(i::Int64)               
         this = new()
@@ -59,8 +70,9 @@ end
 ord = Base.ord(isless,identity,false,Base.Forward)
 
 # Fills colptr and rowval (assumed large enough) with A[list, list], excluding the diagonal
-# list is assumed to be sorted
+# List is assumed to be sorted
 # base-0
+# Ignore the diagonal
 function fill_nodiag_list_sorted!(A::SparseMatrixCSC{Tv,Ti}, colptr::Array{Tj}, rowval::Array{Tj}, list::AbstractArray{Tk}) where {Ti <: Integer, Tj <: Integer, Tk <: Integer, Tv}
     n = length(list)
     colptr[1] = 1
@@ -161,9 +173,9 @@ const IP0 = (p=1,l=0,r=0,a=0)
 #         8  9    10 11  12 13    14 15   <-- leaves lvl maxLevel,      1-hierarchy
 # Hierarchy is encoded into a integer-tree representing the nested hierarchy
 # For instance, a given separator's (lvl maxLevel-2) dofs are numbered
-#       subseps[dofs[sepk]] = [1 1 2 3 3 4 5 5 5]
+#       subseps[dofs[lvl][sep]] = [1 1 2 3 3 4 5 5 5]
 # with a tree stored in 
-#       hrch[sepk] =            1
+#       hrch[lvl][sep] =        1
 #                             /   \
 #                            1     2
 #                          / | \   | \
@@ -177,11 +189,10 @@ const IP0 = (p=1,l=0,r=0,a=0)
 # In addition, each node holds a boolean indicating wether its partition is to be considered an anchor or not
 #
 # Outputs
-#       * seps          seps[i] = 1 ... 2^maxLevel-1, the separator or interior of dof i
 #       * subseps       subseps[i] = 1 ... #partitions at leaf level for dof i if in a separator ; 1 only for the leaves as they have a 1-hierarchy, always
-#       * hrch          hrch[k] [1 <= k <= 2^(maxLevel)-1], a (maxLevel-l+1)-levels hierarchy for a separator at level l
-#       * dofs          dofs[k] [1 <= k <= 2^(maxLevel)-1], the dofs of separator k
-function ml_nd_hrch_fast(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; X::Union{Nothing,AbstractArray{Float64,2}}=nothing, verbose::Bool=true) where {Tv, Ti}
+#       * hrch          hrch[l][s] a (maxLevel-l+1)-levels hierarchy for a separator at level l
+#       * dofs          dofs[l][s] the dofs of separator s at level l
+function mnd(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; X::Union{Nothing,AbstractArray{Float64,2}}=nothing, verbose::Bool=false) where {Tv, Ti}
 
     if verbose
         if X == nothing
@@ -213,12 +224,10 @@ function ml_nd_hrch_fast(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; X::Union{Nothing,
     # Output structures
     L           = (2^maxLevel)-1
     sepk        = 1
-    out_seps    = Array{Int64,1}(undef, n)
     out_dofs    = Array{Array{Int64,1},1}(undef, L)    
     out_hrch    = Array{IT,1}(undef, L)
 
     # Initial hierarchy
-    fill!(out_seps, 0)
     for i = 1:L
         out_hrch[i] = IT(1)
     end
@@ -282,7 +291,6 @@ function ml_nd_hrch_fast(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; X::Union{Nothing,
             new_ints[2*id-1] = left_int
             new_ints[2*id]   = right_int
             # Output data
-            out_seps[mid_int] .= sepk
             out_dofs[sepk]    = mid_int
             # Initialize empty boundary
             new_edges[2*id-1] = Tuple{Int64,Array{Cint,1}}[]
@@ -363,6 +371,6 @@ function ml_nd_hrch_fast(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; X::Union{Nothing,
         sepk += nsep
     end
 
-    return out_seps, out_subseps, out_hrch_2, out_dofs_2
+    return out_subseps, out_hrch_2, out_dofs_2
 
 end
