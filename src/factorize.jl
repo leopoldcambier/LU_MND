@@ -127,7 +127,7 @@ struct BinTreeIt
     maxLevel::Int64
 end
 
-function Base.iterate(iter::BinTreeIt, state=(1, 0))
+function Base.iterate(iter::BinTreeIt, state=(0, 2^iter.maxLevel))
     (l, s) = state
     if l >= iter.maxLevel
         return nothing
@@ -144,7 +144,7 @@ function factorize(A, maxLevel)
    
     N = size(A, 1)
 
-    ## Partition
+    # Partition
     (seps, subseps, hrch, dofs) = ml_nd_hrch_fast(A, maxLevel, verbose=false);
 
 	## Permute the matrix & initialize an empty tree
@@ -237,15 +237,11 @@ function factorize(A, maxLevel)
 
         for sep = 1:length(dofs[lvl])
             s = Tree[lvl][sep]
-            @show lvl, sep, maxLevel
-            @show s.ptr
-            @show s.Nbr
-            @show size(s.ALow)
+            # Check it's fully merged
             @assert size(s.ALow, 2) == 1
             @assert s.Nbr[1] == (lvl, sep, 1)
             # POTF, factor pivot
             Ass = s.ALow[1,1]
-            @show size(Ass)
             LAPACK.potrf!('L', Ass)
             push!(s.NbrRanges, get_dofs(s))
             # TRSM, solve panel in place
