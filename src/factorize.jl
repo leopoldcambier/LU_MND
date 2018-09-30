@@ -6,7 +6,7 @@ function lt_cl(x::Cluster, y::Cluster)
              ( (x[1] == y[1]) && (x[2] == y[2]) && (x[3] < y[3]) )
 end
 
-mutable struct NDSep # A nested dissection separator
+mutable struct NDSep # A nested dissection separator, "s"
 
     ## Hierarchy & dofs data
 	ptr::Array{Int64,1} 			# A pointer array to the end of each cluster within s at the current stage of the elimination
@@ -15,13 +15,18 @@ mutable struct NDSep # A nested dissection separator
     depth::Int64                    # Where the clustering stand in terms of depth
 
     ## Data
-	Low::Matrix{Float64}            # Ass & Ans, Pivot + Lower-part
+	Piv::Matrix{Float64}			# Ass: Diagonal
+	Low::Matrix{Float64}            # Ans: Lower-part 
+	Upp::Matrix{Float64}			# Asn: Upper-part
 
     ## Block information, basically pointers to the data above
-    ALow::Matrix{StridedMatrix{Float64}}         # ALow[n,i] = ith partition, nth neighbor, below diagonal
-    Nbr::Vector{Cluster}                         # Nbr[n]    = nth neighbor (lvl, sep, part)
+    APiv::Matrix{StridedMatrix{Float64}} # APiv[i,j] = ith partition of s, jth partition of s - (self lvl, self sep, i)
+    ALow::Matrix{StridedMatrix{Float64}} # ALow[n,i] = ith partition of s, nth neighbor
+    AUpp::Matrix{StridedMatrix{Float64}} # AUpp[i,n] = ith partition of s, nth neighbor
+    Nbr::Vector{Cluster}                 # Nbr[n]    = nth neighbor (lvl, sep, part)
+    # When fully merged, size(APiv) == (1,1), size(ALow,2) == size(AUpp,1) == 1
 
-    ## Range information, for easy backward/forward pass
+    ## Range information, for easier backward/forward pass
     NbrRanges::Vector{UnitRange{Int64}}
 
     function NDSep(start, subs, hrch) 
@@ -144,8 +149,8 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
    
     N = size(A, 1)
 
-    # Partition
-    (subseps, hrch, dofs) = mnd(A, maxLevel, verbose=verbose);
+    # Symmetric partition
+    (subseps, hrch, dofs) = mnd(A+A', maxLevel, verbose=verbose);
 
 	## Permute the matrix & initialize an empty tree
 	perm = Vector{Int64}(undef, N)
@@ -182,7 +187,8 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
         np = length(h.nit[end])
         # Get the original neighbors
         (I, t1, t2) = findnz(A[:,get_dofs(Tree[lvl][sep])])
-        nbrs = sort(unique(I))
+        (t1, J, t2) = findnz(A[get_dofs(Tree[lvl][sep]),:]) # FIXME: probably slow since in CSC
+        nbrs = sort(unique(vcat(I,J)))
         Nbr = Set(dofs2cl[nbrs])
         # Add the children
         if lvl > 1
@@ -190,9 +196,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
             union!(Nbr, Tree[lvl-1][2*sep  ].Nbr)
         end
         # Remove too small
-        filter!(x -> x[1] >= lvl, Nbr)
-        # Add self
-        union!(Nbr, [(lvl, sep, i) for i in 1:np])
+        filter!(x -> x[1] > lvl, Nbr)
         # Subsample
         Nbr2 = copy(Nbr)
         for (l_, s_, i_) in Nbr2
@@ -209,25 +213,42 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
         nsizes = map(x -> Tree[x[1]][x[2]].ptr[x[3]+1]-Tree[x[1]][x[2]].ptr[x[3]], Nbr)
         n = sum(nsizes)
         Low = zeros(n, s)
+        Upp = zeros(s, n)
+        Piv = zeros(s, s)
         Tree[lvl][sep].Low = Low
+        Tree[lvl][sep].Upp = Upp
+        Tree[lvl][sep].Piv = Piv
         # Get subblocks
         ALow = Matrix{StridedMatrix{Float64}}(undef, (length(Nbr), np))
+        AUpp = Matrix{StridedMatrix{Float64}}(undef, (np, length(Nbr)))
+        APiv = Matrix{StridedMatrix{Float64}}(undef, (np, np))
         sptr = Tree[lvl][sep].ptr
         nptr = sizes_to_ptr(nsizes)
+        # Fill diag
         for i in 1:np
+            idofs = get_dofs(Tree[lvl][sep], i)
+            iids  = sptr[i]:(sptr[i+1]-1)
+            # Diagonal
+            for j in 1:np
+                jdofs = get_dofs(Tree[lvl][sep], j)
+                jids  = sptr[j]:(sptr[j+1]-1)
+                APiv[i,j] = view(Piv, iids, jids)
+                APiv[i,j][:,:] = A[idofs,jdofs]
+            end
+            # Lower/Upper
             for n in 1:length(Nbr)
-                # Define subblock
-                rows = nptr[n]:(nptr[n+1]-1)
-                cols = sptr[i]:(sptr[i+1]-1)
-                ALow[n,i] = view(Low, rows, cols);  
-                # Fill subblock
 				(lvln,sepn,in) = Nbr[n]
-				rows = get_dofs(Tree[lvln][sepn], in)
-				cols = get_dofs(Tree[lvl][sep], i)
-				ALow[n,i][:,:] = A[rows, cols]
+                ndofs = get_dofs(Tree[lvln][sepn], in)
+                nids  = nptr[n]:(nptr[n+1]-1)
+                ALow[n,i] = view(Low, nids, iids);  
+				ALow[n,i][:,:] = A[ndofs, idofs]
+                AUpp[i,n] = view(Upp, iids, nids)
+                AUpp[i,n][:,:] = A[idofs, ndofs]
             end
         end
         Tree[lvl][sep].ALow = ALow
+        Tree[lvl][sep].AUpp = AUpp
+        Tree[lvl][sep].APiv = APiv
     end
 
     ## Numerical factorization
@@ -239,40 +260,60 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
         for sep = 1:length(dofs[lvl])
             s = Tree[lvl][sep]
             # Check it's fully merged
-            @assert size(s.ALow, 2) == 1
-            @assert s.Nbr[1] == (lvl, sep, 1)
-            # POTF, factor pivot
-            Ass = s.ALow[1,1]
-            LAPACK.potrf!('L', Ass)
-            push!(s.NbrRanges, get_dofs(s))
+            @assert all(size(s.APiv) .== (1,1))
+            # GETRF, factor pivot (no pivoting so far)
+            Ass = s.APiv[1,1]
+            lu!(Ass, Val(false)); # Ass -> L U
             # TRSM, solve panel in place
-            for n = 2:length(s.Nbr)
-                Ans = s.ALow[n,1]
+            for n = 1:length(s.Nbr)
                 (ln,sn,in) = s.Nbr[n]
                 push!(s.NbrRanges, get_dofs(Tree[ln][sn],in))
-                BLAS.trsm!('R','L','T','N', 1.0, Ass, Ans)
+                # Lower
+                Ans = s.ALow[n,1]
+                BLAS.trsm!('R','U','N','N', 1.0, Ass, Ans) # Ans -> Ans U^-1
+                # Upper
+                Asn = s.AUpp[1,n]
+                BLAS.trsm!('L','L','N','U', 1.0, Ass, Asn) # Asn -> L^-1 Asn
             end
             # GEMM, update schur complement
-            for ni = 2:length(s.Nbr)
-                for nj = ni:length(s.Nbr)
+            for ni = 1:length(s.Nbr)
+                for nj = 1:length(s.Nbr)
                     Ais = s.ALow[ni,1]
-                    Ajs = s.ALow[nj,1]
+                    Asj = s.AUpp[1,nj]
                     (li,si,ii) = s.Nbr[ni]
-                    n = Tree[li][si]
-                    jj = searchsortedfirst(n.Nbr, s.Nbr[nj], lt=lt_cl)
-                    Aji = n.ALow[jj,ii]
-                    BLAS.gemm!('N', 'T', - 1.0, Ajs, Ais, 1.0, Aji) 
+                    (lj,sj,jj) = s.Nbr[nj]
+                    if (li,si) == (lj,sj)
+                        Aij = Tree[li][si].APiv[ii,jj]
+                    else
+                        @assert li != lj # Can't be any edge between different separators at a given level
+                        if li < lj
+                            n = Tree[li][si]
+                            id = searchsortedfirst(n.Nbr, s.Nbr[nj], lt=lt_cl)
+                            Aij = n.AUpp[ii,id]
+                        else
+                            n = Tree[lj][sj]
+                            id = searchsortedfirst(n.Nbr, s.Nbr[ni], lt=lt_cl)
+                            Aij = n.ALow[id,jj]
+                        end
+                    end
+                    BLAS.gemm!('N', 'N', - 1.0, Ais, Asj, 1.0, Aij) # Aij -> Aij - Ais Asj
                 end
             end
         end
 
-        ## Merge
+        ## Merge, i.e., redefine all the views
         for lvl2 = lvl+1:maxLevel
             for sep2 = 1:length(dofs[lvl2])
-                # Take care of the columns
                 s = Tree[lvl2][sep2]
                 ptr2 = ptr_merged(s)
-                # Take care of the rows
+                # Pivot
+                for i = 1:length(ptr2)-1
+                    for j = 1:length(ptr2)-1
+                        s.APiv[i,j] = view(s.Piv, ptr2[i]:(ptr2[i+1]-1), ptr2[j]:(ptr2[j+1]-1))
+                    end
+                end
+                s.APiv = s.APiv[1:length(ptr2)-1, 1:length(ptr2)-1]
+                # Lower/Upper
                 n_i1, n_b1, n_merged = 1, 1, 1
                 while n_b1 <= length(s.Nbr)
                     # What are n's siblings ?
@@ -290,6 +331,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
                     s.Nbr[n_merged] = (l_, s_, parent)
                     for c = 1:length(ptr2)-1
                         s.ALow[n_merged, c] = view(s.Low, n_i1:(n_i2-1), ptr2[c]:(ptr2[c+1]-1))
+                        s.AUpp[c, n_merged] = view(s.Upp, ptr2[c]:(ptr2[c+1]-1), n_i1:(n_i2-1))
                     end
                     # Next
                     n_merged += 1
@@ -297,6 +339,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
                 end
                 # Resize
                 s.ALow = s.ALow[1:n_merged-1, 1:length(ptr2)-1]
+                s.AUpp = s.AUpp[1:length(ptr2)-1, 1:n_merged-1]
                 s.Nbr  = s.Nbr[1:n_merged-1]
             end
         end
@@ -321,12 +364,12 @@ function solve(tree::NDTree, x::Vector{Float64})
     # Forward
     for l = 1:maxLevel
         for s = 1:2^(maxLevel-l)
-            Lpp = tril(tree.t[l][s].ALow[1,1])
-            p   = tree.t[l][s].NbrRanges[1]
+            Lss = tree.t[l][s].APiv[1,1]
+            p   = get_dofs(tree.t[l][s])
             # Pivot
-            y[p] = Lpp \ y[p]
+            BLAS.trsv!('L', 'N', 'U', Lss, view(y, p)) # y[p] <- Lss^-1 y[p] 
             # Panel
-            for (Lnp, n) in zip(tree.t[l][s].ALow[2:end,1], tree.t[l][s].NbrRanges[2:end])
+            for (Lnp, n) in zip(tree.t[l][s].ALow[:,1], tree.t[l][s].NbrRanges)
                 y[n] -= Lnp * y[p]
             end
         end
@@ -334,14 +377,14 @@ function solve(tree::NDTree, x::Vector{Float64})
     # Backward
     for l = maxLevel:-1:1
         for s = 1:2^(maxLevel-l)
-            Lpp = tril(tree.t[l][s].ALow[1,1])
-            p   = tree.t[l][s].NbrRanges[1]
+            Uss = tree.t[l][s].APiv[1,1]
+            p   = get_dofs(tree.t[l][s])
             # Panel
-            for (Lnp, n) in zip(tree.t[l][s].ALow[2:end,1], tree.t[l][s].NbrRanges[2:end])
-                y[p] -= Lnp' * y[n]
+            for (Upn, n) in zip(tree.t[l][s].AUpp[1,:], tree.t[l][s].NbrRanges)
+                y[p] -= Upn * y[n]
             end
             # Pivot
-            y[p] = Lpp' \ y[p]
+            BLAS.trsv!('U', 'N', 'N', Uss, view(y, p)) # y[p] <- Uss^-1 y[p] 
         end
     end
     return y[invperm(tree.p)]
