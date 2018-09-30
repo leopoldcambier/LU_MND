@@ -4,52 +4,88 @@ include("../src/LUMND.jl")
 using .LUMND
 using Test
 using Random
-using SHA 
+using SHA
+using MatrixDepot
 
 Random.seed!(0)
 
-@testset "Solve-SPD" begin
-    @printf("  # |     N lvl         k ->   |Ax-b|   |x-x*| hash\n")
-    for i = 1:10
-        d = rand(2:3)
-        n = d == 2 ? rand(5:30) : rand(5:10)
-        leaf = rand([1,2,5,10,15,20])
-        lvl = Int64(round(log(n^d / (leaf)) / log(2)))
-        A = Ad(n,d)
-        b = rand(size(A, 1))
-        tree = LUMND.factorize(A, lvl)
-        x = LUMND.solve(tree, b)
-        xref = A\b
-        k = cond(A, 1)
-        @printf("%3d | %5d  %2d  %2.2e -> %4.2e %4.2e %d\n", i, size(A,1), lvl, k, norm(A*x-b)/norm(b), norm(xref - x)/norm(xref), hash(x))
-        @test(norm(A*x-b)/norm(b)     <     1e-13)
-        @test(norm(x-xref)/norm(xref) < k * 1e-13)
+function checkAccuracy(A, lvl)
+    b = rand(size(A, 1))
+    tree = LUMND.factorize(A, lvl)
+    x = LUMND.solve(tree, b)
+    xref = A\b
+    k = cond(A, 1)
+    @test(norm(A*x-b)/norm(b)     <     1e-13)
+    @test(norm(x-xref)/norm(xref) < k * 1e-13)
+    return b, k, x, xref
+end
+
+@testset "Solve-Smallworld-SPD" begin
+    for n in 2:20:500
+        A = matrixdepot("smallworld", n) 
+        leaf = rand([1,2,5])
+        N = size(A,1)
+        A = A + sparse(UniformScaling(10.0), N, N) # Make it non-singular
+        lvl = Int64(round(log(N / (leaf)) / log(2) + 1))
+        (b, k, x, xref) = checkAccuracy(A, lvl)
+        @printf("Smallworld | %3d -> %4.2e %4.2e\n", N, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
     end
 end
 
-@testset "Solve-Gen" begin
+@testset "Solve-Wathen-SPD" begin
+    for n in 1:5:30
+        A = matrixdepot("wathen", n) 
+        leaf = rand([1,2,5])
+        N = size(A,1)
+        lvl = Int64(round(log(N / (leaf)) / log(2) + 1))
+        (b, k, x, xref) = checkAccuracy(A, lvl)
+        @printf("Wathen | %3d -> %4.2e %4.2e\n", N, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
+    end
+end
+
+@testset "Solve-Lapl-SPD" begin
     @printf("  # |     N lvl         k ->   |Ax-b|   |x-x*| hash\n")
     for i = 1:10
         d = rand(2:3)
         n = d == 2 ? rand(5:30) : rand(5:10)
         leaf = rand([1,2,5,10,15,20])
-        lvl = Int64(round(log(n^d / (leaf)) / log(2)))
+        lvl = Int64(round(log(n^d / (leaf)) / log(2) + 1))
+        A = Ad(n,d)
+        (b, k, x, xref) = checkAccuracy(A, lvl)
+        @printf("%3d | %5d  %2d  %2.2e -> %4.2e %4.2e %d\n", i, size(A,1), lvl, k, norm(A*x-b)/norm(b), norm(xref - x)/norm(xref), hash(x))
+    end
+end
+
+@testset "Solve-Lapl-Gen" begin
+    @printf("  # |     N lvl         k ->   |Ax-b|   |x-x*| hash\n")
+    for i = 1:10
+        d = rand(2:3)
+        n = d == 2 ? rand(5:30) : rand(5:10)
+        leaf = rand([1,2,5,10,15,20])
+        lvl = Int64(ceil(log(n^d / (leaf)) / log(2)))
         A = Ad(n,d)
         N = size(A,1)
         (I,J,V) = findnz(A)
         sig = rand([1e-1, 1e-2, 1e-3, 1e-4])
         V += sig .* randn(size(V)) .* V
         A = sparse(I,J,V,N,N)
-        b = rand(size(A, 1))
-        tree = LUMND.factorize(A, lvl)
-        x = LUMND.solve(tree, b)
-        xref = A\b
-        k = cond(A, 1)
+        (b, k, x, xref) = checkAccuracy(A, lvl)
         @printf("%3d | %5d  %2d  %2.2e -> %4.2e %4.2e %d\n", i, size(A,1), lvl, k, norm(A*x-b)/norm(b), norm(xref - x)/norm(xref), hash(x))
-        @test(norm(A*x-b)/norm(b)     <     1e-13)
-        @test(norm(x-xref)/norm(xref) < k * 1e-13)
     end
 end
+
+
+@testset "Solve-Blur-Gen" begin
+    for n in 3:5:53
+        A = matrixdepot("blur", n) 
+        leaf = rand([1,2,5])
+        N = size(A,1)
+        lvl = Int64(round(log(N / (leaf)) / log(2)))
+        (b, k, x, xref) = checkAccuracy(A, lvl)
+        @printf("Blur | %2d -> %4.2e %4.2e\n", n, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
+    end
+end
+
 
 @testset "Partition" begin
     for i = 1:10

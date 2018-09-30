@@ -148,6 +148,8 @@ end
 function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::Bool=false)
    
     N = size(A, 1)
+    @assert size(A, 2) == N
+    @assert maxLevel >= 1
 
     # Symmetric partition
     (subseps, hrch, dofs) = mnd(A+A', maxLevel, verbose=verbose);
@@ -210,7 +212,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
         sort!(Nbr, lt=lt_cl)
         Tree[lvl][sep].Nbr = Nbr
         # Allocate full data
-        nsizes = map(x -> Tree[x[1]][x[2]].ptr[x[3]+1]-Tree[x[1]][x[2]].ptr[x[3]], Nbr)
+        nsizes = Vector{Int64}(map(x -> Tree[x[1]][x[2]].ptr[x[3]+1]-Tree[x[1]][x[2]].ptr[x[3]], Nbr))
         n = sum(nsizes)
         Low = zeros(n, s)
         Upp = zeros(s, n)
