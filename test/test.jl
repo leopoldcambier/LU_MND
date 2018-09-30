@@ -14,18 +14,26 @@ function checkAccuracy(A, lvl)
     tree = LUMND.factorize(A, lvl)
     x = LUMND.solve(tree, b)
     xref = A\b
-    k = cond(A, 1)
+    if issymmetric(A)
+        k = cond(A, 1)
+    else # Crazy slow otherwise
+        k = 100
+    end
     @test(norm(A*x-b)/norm(b)     <     1e-13)
     @test(norm(x-xref)/norm(xref) < k * 1e-13)
     return b, k, x, xref
 end
 
-@testset "Solve-Smallworld-SPD" begin
+@testset "Solve-Smallworld-Gen" begin
     for n in 2:20:500
         A = matrixdepot("smallworld", n) 
         leaf = rand([1,2,5])
         N = size(A,1)
         A = A + sparse(UniformScaling(10.0), N, N) # Make it non-singular
+        (I,J,V) = findnz(A)
+        sig = rand([1e-1, 1e-2, 1e-3, 1e-4]) # Make it non-symmetric
+        V += sig .* randn(size(V)) .* V
+        A = sparse(I,J,V,N,N)
         lvl = Int64(round(log(N / (leaf)) / log(2) + 1))
         (b, k, x, xref) = checkAccuracy(A, lvl)
         @printf("Smallworld | %3d -> %4.2e %4.2e\n", N, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
@@ -39,7 +47,7 @@ end
         N = size(A,1)
         lvl = Int64(round(log(N / (leaf)) / log(2) + 1))
         (b, k, x, xref) = checkAccuracy(A, lvl)
-        @printf("Wathen | %3d -> %4.2e %4.2e\n", N, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
+        @printf("Wathen | %5d -> %4.2e %4.2e\n", N, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
     end
 end
 
@@ -66,7 +74,7 @@ end
         A = Ad(n,d)
         N = size(A,1)
         (I,J,V) = findnz(A)
-        sig = rand([1e-1, 1e-2, 1e-3, 1e-4])
+        sig = rand([1e-1, 1e-2, 1e-3, 1e-4]) # Make it non-symmetric
         V += sig .* randn(size(V)) .* V
         A = sparse(I,J,V,N,N)
         (b, k, x, xref) = checkAccuracy(A, lvl)
@@ -74,8 +82,7 @@ end
     end
 end
 
-
-@testset "Solve-Blur-Gen" begin
+@testset "Solve-Blur-SPD" begin
     for n in 3:5:53
         A = matrixdepot("blur", n) 
         leaf = rand([1,2,5])
@@ -85,7 +92,6 @@ end
         @printf("Blur | %2d -> %4.2e %4.2e\n", n, norm(A*x-b)/norm(b), norm(x-xref)/norm(xref))
     end
 end
-
 
 @testset "Partition" begin
     for i = 1:10
