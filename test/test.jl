@@ -70,8 +70,8 @@ function checkAccuracy(A, lvl)
     else # Crazy slow otherwise
         k = 100
     end
-    @test(norm(A*x-b)/norm(b)     <     1e-13)
-    @test(norm(x-xref)/norm(xref) < k * 1e-13)
+    @test(norm(A*x-b)/norm(b)     <     1e-12)
+    @test(norm(x-xref)/norm(xref) < k * 1e-12)
     return b, k, x, xref
 end
 
@@ -104,7 +104,7 @@ end
 
 @testset "Solve-Lapl-SPD" begin
     @printf("  # |     N lvl         k ->   |Ax-b|   |x-x*| hash\n")
-    for i = 1:10
+    for i = 1:100
         d = rand(2:3)
         n = d == 2 ? rand(5:30) : rand(5:10)
         leaf = rand([1,2,5,10,15,20])
@@ -117,7 +117,7 @@ end
 
 @testset "Solve-Lapl-Gen" begin
     @printf("  # |     N lvl         k ->   |Ax-b|   |x-x*| hash\n")
-    for i = 1:10
+    for i = 1:100
         d = rand(2:3)
         n = d == 2 ? rand(5:30) : rand(5:10)
         leaf = rand([1,2,5,10,15,20])

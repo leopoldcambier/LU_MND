@@ -9,15 +9,15 @@ end
 mutable struct NDSep # A nested dissection separator, "s"
 
     ## Hierarchy & dofs data
-	ptr::Array{Int64,1} 			# A pointer array to the end of each cluster within s at the current stage of the elimination
+    ptr::Array{Int64,1}             # A pointer array to the end of each cluster within s at the current stage of the elimination
     hrch::IT                        # A hierarchy, i.e., a tree of integer, monotone left -> right
     start::Int64                    # Where does the separator start
     depth::Int64                    # Where the clustering stand in terms of depth
 
     ## Data
-	Piv::Matrix{Float64}			# Ass: Diagonal
-	Low::Matrix{Float64}            # Ans: Lower-part 
-	Upp::Matrix{Float64}			# Asn: Upper-part
+    Piv::Matrix{Float64}            # Ass: Diagonal
+    Low::Matrix{Float64}            # Ans: Lower-part 
+    Upp::Matrix{Float64}            # Asn: Upper-part
 
     ## Block information, basically pointers to the data above
     APiv::Matrix{StridedMatrix{Float64}} # APiv[i,j] = ith partition of s, jth partition of s - (self lvl, self sep, i)
@@ -132,8 +132,8 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
     # Symmetric partition
     (subseps, hrch, dofs) = mnd(A+A', maxLevel, verbose=verbose);
 
-	## Permute the matrix & initialize an empty tree
-	perm = Vector{Int64}(undef, N)
+    ## Permute the matrix & initialize an empty tree
+    perm = Vector{Int64}(undef, N)
     Tree = Vector{Vector{NDSep}}(undef, maxLevel)
     start = 1
     for lvl = 1:maxLevel
@@ -160,7 +160,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
     dofs2cl = dofs2cl[perm]
 
     ## Symbolic computation: Compute sparsity pattern, allocate & assemble
-	if(verbose) @printf("Assembling...\n") end
+    if(verbose) @printf("Assembling...\n") end
     for (lvl, sep) in BinTreeIt(maxLevel)
         h = Tree[lvl][sep].hrch
         s = length(dofs[lvl][sep])
@@ -217,11 +217,11 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
             end
             # Lower/Upper
             for n in 1:length(Nbr)
-				(lvln,sepn,in) = Nbr[n]
+                (lvln,sepn,in) = Nbr[n]
                 ndofs = get_dofs(Tree[lvln][sepn], in)
                 nids  = nptr[n]:(nptr[n+1]-1)
                 ALow[n,i] = view(Low, nids, iids);  
-				ALow[n,i][:,:] = A[ndofs, idofs]
+                ALow[n,i][:,:] = A[ndofs, idofs]
                 AUpp[i,n] = view(Upp, iids, nids)
                 AUpp[i,n][:,:] = A[idofs, ndofs]
             end
@@ -234,7 +234,7 @@ function factorize(A::SparseMatrixCSC{Float64,Int64}, maxLevel::Int64, verbose::
     ## Numerical factorization
     for lvl = 1:maxLevel
 
-		if(verbose) @printf("Lvl: %d, eliminating\n", lvl) end
+        if(verbose) @printf("Lvl: %d, eliminating\n", lvl) end
         
         ## Eliminate
         for sep = 1:length(dofs[lvl])
