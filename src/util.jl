@@ -150,3 +150,27 @@ function are_connected(l1, s1, l2, s2, maxLevel)
     end
     smin == smax
 end
+
+
+# BinTree iterator
+# Generate
+# (1, 1), (1, 2), (1, 3), (1, 4)
+#     (2, 1),         (2, 2)
+#             (3, 1)
+struct BinTreeIt
+    maxLevel::Int64
+end
+
+function Base.iterate(iter::BinTreeIt, state=(0, 2^iter.maxLevel))
+    (l, s) = state
+    if l >= iter.maxLevel
+        return nothing
+    end
+    if s >= 2^(iter.maxLevel-l)
+        next = (l+1, 1)
+    else
+        next = (l, s+1)
+    end
+    return (next, next)
+end
+
