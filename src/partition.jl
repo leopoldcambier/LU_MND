@@ -72,12 +72,16 @@ const IP0 = (p=1,l=1,r=1)
 # Partition the graph represented by the sparse matrix A
 # from level 1 to maxLevel
 #
-# Each separator is divided in a hierarchy of partitions
-# Separator at level 1 <= l <= maxLevel-1 consists of a hierarchy of maxLevel-l+1 nested partitions
-# Interiors (leaf level) have 1 nested partition
+# This performs a 'modified' nested dissection ordering, i.e., a ND ordering but with 'matching' partitions.
+#
+# By convention, level=1 are the leaf separators and level=maxLevel is the root separator.
+#
+# Each ND separator is further divided in a hierarchy of clusters
+# Separator at level 1 <= l <= maxLevel consists of a l-levels hierarchy of nested clusters.
 # Hierarchy is encoded into a integer-tree representing the nested hierarchy
-# For instance, a given separator's (lvl maxLevel-2) dofs are numbered
-#       subseps[dofs[lvl][sep]] = [1 1 2 3 3 4 5 5 5]
+#
+# For instance, a given separator's (lvl=3, sep=?) dofs (degrees of freedom, i.e., original unknowns) are numbered
+#       subseps[dofs[lvl][sep]] = [1 1 2 3 3 4 5 5 5] (in practice, they are not necessary sorted)
 # with a tree stored in 
 #       hrch[lvl][sep] =        1
 #                             /   \
@@ -85,16 +89,15 @@ const IP0 = (p=1,l=1,r=1)
 #                          / | \   | \
 #                         1  2  3  4  5
 # indicating a 3-levels hierarchy and the way the merging should be performed
-# The nodes are numbered 1 ... |p| and hold a value corresponding to their id in IT.nit, i.e., a node at level l with value i is hold at nit[l][i]
 # In particular, the hierarchy is
 #                       [1 1 2 3 3 4 5 5 5] 5 partitions
 #                       [1 1 1 1 1 2 2 2 2] 2 partitions
 #                       [1 1 1 1 1 1 1 1 1] 1 partition - root
 #
 # Outputs
-#       * subseps       subseps[i] = 1 ... #partitions at leaf level for dof i if in a separator ; 1 only for the leaves as they have a 1-hierarchy, always
-#       * hrch          hrch[l][s] a (maxLevel-l+1)-levels hierarchy for a separator at level l
-#       * dofs          dofs[l][s] the dofs of separator s at level l
+#       * subseps       subseps[i] = 1 ... #partitions, indicates which cluster within its ND separator node i belongs to
+#       * hrch          hrch[l][s] a l-levels hierarchy for separator (l,s)
+#       * dofs          dofs[l][s] the dofs of separator (l,s)
 function mnd(A::SparseMatrixCSC{Tv,Ti}, maxLevel ; verbose::Bool=false) where {Tv, Ti}
 
     @assert maxLevel >= 1
