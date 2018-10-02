@@ -174,3 +174,36 @@ function Base.iterate(iter::BinTreeIt, state=(0, 2^iter.maxLevel))
     return (next, next)
 end
 
+
+# Fills colptr and rowval (assumed large enough) with A[list, list], excluding the diagonal
+# List is assumed to be sorted
+# base-0
+# Ignore the diagonal
+function fill_nodiag_list_sorted!(A::SparseMatrixCSC{Tv,Ti}, colptr::Array{Tj}, rowval::Array{Tj}, list::AbstractArray{Tk}) where {Ti <: Integer, Tj <: Integer, Tk <: Integer, Tv}
+    n = length(list)
+    colptr[1] = 1
+    if n == 0 
+        return
+    end
+    for j = 1:n
+        colptr[j+1] = colptr[j] # Initially, nothing
+        j_ = list[j]
+        i_ = 1
+        for k = A.colptr[j_]:(A.colptr[j_+1]-1)
+            i = A.rowval[k]
+            if i == j_ # Skip diagonal
+                continue
+            end
+            i_ = searchsortedfirst(list, Tk(i), i_, length(list), ord) # Ok since sorted
+            if i_ < n+1 && list[i_] == Tk(i) # Yes, at i_
+                rowval[colptr[j+1]] = i_
+                colptr[j+1] += 1
+            end
+        end
+    end
+    nz = colptr[n+1]-1
+    colptr[1:n+1] .-= 1
+    rowval[1:nz]  .-= 1
+    return
+end
+
