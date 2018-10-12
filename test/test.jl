@@ -70,8 +70,9 @@ function checkAccuracy(A, lvl)
     else # Crazy slow otherwise
         k = 100
     end
-    @test(norm(A*x-b)/norm(b)     <     1e-12)
-    @test(norm(x-xref)/norm(xref) < k * 1e-12)
+    resref = norm(A*xref-b)/norm(b)
+    @test(norm(A*x-b)/norm(b)     < 10 * resref)
+    @test(norm(x-xref)/norm(xref) < k  * 1e-12 )
     return b, k, x, xref
 end
 

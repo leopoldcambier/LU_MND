@@ -17,7 +17,6 @@
 # A node a the tree
 mutable struct NodeIT 
     i::Int64                        # Id
-    anc::Bool                       # Wether the point is an anchor
     c::Array{NodeIT,1}              # Childrens
     p::Union{Nothing, NodeIT}       # Parent
     function NodeIT(i::Int64)
@@ -25,11 +24,10 @@ mutable struct NodeIT
         this.i = i
         this.c = NodeIT[]
         this.p = nothing
-        this.anc = false
         this
     end
 end
-Base.show(io::IO, n::NodeIT) = print(io, n.anc ? @sprintf("%d*",n.i) : @sprintf("%d^",n.i))
+Base.show(io::IO, n::NodeIT) = print(io,n.i)
 
 # The tree
 mutable struct IT 
@@ -44,16 +42,6 @@ mutable struct IT
         this = new()
         this.nit = [ [] ]
         this
-    end
-end
-
-function show_it(it::IT)
-    for l = 1:length(it.nit)
-        for n in it.nit[l]
-            for c in n.c
-                @printf("%s%d-%d (~>%d ; %s)\n", repeat(" ", l), n.i, c.i, c.p.i, n.anc ? "anc" : "--")
-            end
-        end
     end
 end
 
